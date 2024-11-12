@@ -1,73 +1,70 @@
-import streamlit as st
+import os
 from gtts import gTTS
 from googletrans import Translator
-import tempfile
-import os
 from docx import Document
+import tempfile
+import io
+import streamlit as st
 
 # Initialize the Translator
 translator = Translator()
 
-# Streamlit app title
-st.title("Document Translator and Pronunciation")
+# Streamlit UI
+st.title("Document Translation and Audio Pronunciation")
+st.subheader("Upload a .txt or .docx file to translate and listen to the audio pronunciation in Urdu")
 
-# Allow the user to upload a file
-uploaded_file = st.file_uploader("Upload a document (.txt or .docx)", type=["txt", "docx"])
+# File uploader for .txt and .docx files
+uploaded_file = st.file_uploader("Choose a .txt or .docx file", type=["txt", "docx"])
 
+# Extract text from the .docx file
 def extract_text_from_docx(docx_file):
-    # Extract text from a .docx file
+    docx_file = io.BytesIO(docx_file)
     document = Document(docx_file)
     text = ""
     for para in document.paragraphs:
         text += para.text + "\n"
     return text
 
+# Extract text from a .txt file
 def extract_text_from_txt(txt_file):
-    # Extract text from a .txt file
-    text = txt_file.read().decode("utf-8")
+    text = txt_file.decode("utf-8")
     return text
 
-# Function to translate text to Urdu
-@st.cache
-def get_translation(text):
-    return translator.translate(text, dest='ur').text
+# Translate text to Urdu using googletrans
+def translate_text(text):
+    translation = translator.translate(text, dest='ur')
+    return translation.text
 
-# Function to generate pronunciation (audio) for the translated text
-@st.cache
-def get_pronunciation(text):
-    try:
-        tts = gTTS(text=text, lang='ur')  # Convert to Urdu pronunciation
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as tmp_file:
-            tts.save(tmp_file.name)
-            return tmp_file.name
-    except Exception as e:
-        st.error(f"Error generating speech: {e}")
-        return None
+# Generate audio pronunciation using gTTS
+def generate_audio(text, lang='ur'):
+    tts = gTTS(text=text, lang=lang)
+    temp_audio_path = tempfile.mktemp(suffix='.mp3')
+    tts.save(temp_audio_path)
+    return temp_audio_path
 
-# If a file is uploaded
+# Process the uploaded document
 if uploaded_file is not None:
-    # Extract text from the file
-    if uploaded_file.type == "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
-        text = extract_text_from_docx(uploaded_file)
-    elif uploaded_file.type == "text/plain":
-        text = extract_text_from_txt(uploaded_file)
+    # Check file type and extract text
+    if uploaded_file.name.endswith(".docx"):
+        text = extract_text_from_docx(uploaded_file.getvalue())
+    elif uploaded_file.name.endswith(".txt"):
+        text = extract_text_from_txt(uploaded_file.getvalue())
     else:
-        st.error("Unsupported file type")
-        text = ""
+        st.error("Unsupported file format.")
+        st.stop()
+    
+    # Display original text
+    st.subheader("Original Text")
+    st.text_area("Original Text", text, height=200)
 
-    if text:
-        # Show the original text
-        st.subheader("Original Text")
-        st.write(text)
+    # Translate text to Urdu
+    translated_text = translate_text(text)
+    st.subheader("Translated Text (Urdu)")
+    st.text_area("Translated Text", translated_text, height=200)
 
-        # Translate the text to Urdu
-        translated_text = get_translation(text)
-        st.subheader("Translated Text (Urdu)")
-        st.write(translated_text)
-
-        # Play the pronunciation of the translated text
-        if st.button("Play Pronunciation"):
-            pronunciation_file = get_pronunciation(translated_text)
-            if pronunciation_file:
-                st.audio(pronunciation_file)
-                os.remove(pronunciation_file)  # Clean up the temporary file
+    # Generate audio from translated text
+    audio_path = generate_audio(translated_text)
+    
+    # Display audio player
+    st.subheader("Audio Pronunciation")
+    st.audio(audio_path)
